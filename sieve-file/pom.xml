@@ -4,7 +4,7 @@
     <parent>
         <groupId>com.mastfrog</groupId>
         <artifactId>mastfrog-parent</artifactId>
-        <version>2.0.0-dev</version>
+        <version>2.5.0-dev</version>
 	<relativePath/>
     </parent>
     <artifactId>sieve-file</artifactId>
@@ -47,6 +47,7 @@
                     <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>
+                    <appendAssemblyId>false</appendAssemblyId>
                 </configuration>
                 <executions>
                     <execution>
@@ -56,7 +57,7 @@
                             <goal>single</goal>
                         </goals>
                         <configuration>
-                            <finalName>sieve</finalName>
+                            <finalName>primes</finalName>
                             <dependencySets>
                                 <dependencySet>
                                     <outputDirectory>/</outputDirectory>
@@ -77,12 +78,14 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>2.19</version>
+                <version>2.22.0</version>
                 <configuration>
                     <parallelMavenExecution>false</parallelMavenExecution>
-                    <forkCount>1</forkCount>
-                    <perCoreThreadCount>1</perCoreThreadCount>
+                    <fork>false</fork>
                     <threadCount>1</threadCount>
+                    <childDelegation>false</childDelegation>
+                    <disableXmlReport>true</disableXmlReport>
+                    <forkCount>0</forkCount>
                     <reuseForks>false</reuseForks>
                     <trimStackTrace>false</trimStackTrace>
                     <useFile>false</useFile>

@@ -1,0 +1,11 @@
+#!/bin/sh
+
+#native-image -R:+PrintCompilation -R:+PrintImageObjectTree --verbose -jar target/acteur-graal-demo-all.jar -H:ReflectionConfigurationFiles=target/classes/META-INF/injection/reflective.json --report-unsupported-elements-at-runtime -da -H:CPUFeatures="SSE4_1,POPCNT,AVX,AES,CLMUL,MMX,SSE3,SSE4_2,TSC,CMOV"
+
+set -e
+
+PROJECT=`pwd`
+mvn clean install
+#cd $SUBSTRATE_HOME && $MX_HOME/mx native-image -R:+PrintCompilation -R:+PrintImageObjectTree --verbose -jar $PROJECT/target/primes.jar -H:ReflectionConfigurationFiles=$PROJECT/target/classes/META-INF/injection/reflective.json -da -H:CPUFeatures="SSE4_1,POPCNT,AVX,AES,CLMUL,MMX,SSE3,SSE4_2,TSC,CMOV"
+cd $SUBSTRATE_HOME && $MX_HOME/mx native-image -R:+PrintCompilation -R:+PrintImageObjectTree --verbose -jar $PROJECT/target/primes.jar -da -H:CPUFeatures="SSE4_1,POPCNT,AVX,AES,CLMUL,MMX,SSE3,SSE4_2,TSC,CMOV,AVX2"
+mv $SUBSTRATE_HOME/primes  $PROJECT/primal

@@ -23,7 +23,7 @@
  */
 package com.mastfrog.primes;
 
-import com.mastfrog.util.Checks;
+import com.mastfrog.util.preconditions.Checks;
 import java.io.IOException;
 import static java.lang.Math.floor;
 import java.nio.ByteBuffer;
@@ -240,7 +240,7 @@ public class SeqFileHeader {
         try {
             channel.position(0);
             write(channel);
-            channel.force(true);
+//            channel.force(true);
         } catch (IOException ex) {
             this.maxOffset = oldMaxOffset;
             count = oldCount;
@@ -342,6 +342,10 @@ public class SeqFileHeader {
      * @return The number of bits needed.
      */
     public static int bitsRequired(long n) {
+        if (n == 1) {
+            return 1;
+        }
+        n = (n - 1) / 2;
         return (int) floor(log2(n) + 1);
     }
 

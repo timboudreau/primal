@@ -25,7 +25,7 @@ package com.mastfrog.primes;
 
 import com.github.jinahya.bit.io.BitInput;
 import com.github.jinahya.bit.io.DefaultBitInput;
-import com.mastfrog.util.Exceptions;
+import com.mastfrog.util.preconditions.Exceptions;
 import java.io.IOException;
 import java.nio.BufferUnderflowException;
 import java.util.function.LongSupplier;
@@ -76,6 +76,12 @@ public final class NumberSequenceReader implements LongSupplier {
         }
     }
 
+    long pos() throws IOException { // for tests
+        return file.channel().position();
+    }
+
+    boolean debug;
+
     public long next() throws IOException {
         if (count >= file.header().count()) {
             return -1;
@@ -84,19 +90,30 @@ public final class NumberSequenceReader implements LongSupplier {
         try {
             isOffsetEntry = count % file.header().offsetEntriesPerFullEntry() == 0;
             if (isOffsetEntry) {
-                lastValue = in.readLong(true, file.header().bitsPerFullEntry());
+                long readValue = in.readLong(true, file.header().bitsPerFullEntry());
                 cumulativeBitsRead += file.header().bitsPerFullEntry();
-            } else {
-                int val = in.readInt(true, file.header().bitsPerOffsetEntry());
-                if (val == 0) {
-                    val = 1;
-                } else {
-                    val *= 2;
+                lastValue = file.decodeFull(readValue);
+//                if (readValue == 0) {
+//                    lastValue = 2;
+//                } else {
+//                    lastValue = (readValue * 2) + 1;
+//                }
+                if (debug) {
+                    System.out.println("READ FULL ENTRY AT " + count + " for  " + lastValue + " as " + readValue);
                 }
-                lastValue += val;
+            } else {
+                int readOffset = in.readInt(true, file.header().bitsPerOffsetEntry());
+                int offset = file.decodeOffset(readOffset);
+                if (debug) {
+                    System.out.println("Read gap entry " + count + " for " + (lastValue + offset) + " realGap " + offset + " read as " + readOffset);
+                }
+
+                lastValue += offset;
                 cumulativeBitsRead += file.header().bitsPerOffsetEntry();
             }
             count++;
+//            assert lastValue % 2 != 0 || lastValue == 2 : " value in " + this.file + " is divisible by 2: " + lastValue;
+//            assert lastValue % 3 != 0 || lastValue == 3 : " value in " + this.file + " is divisible by 3: " + lastValue;;
             return lastValue;
         } catch (BufferUnderflowException ex) {
             throw new IOException("Ran out of data reading element " + count
@@ -107,10 +124,14 @@ public final class NumberSequenceReader implements LongSupplier {
         }
     }
 
+    long last() {
+        return lastValue;
+    }
+
     public long count() {
         return count;
     }
-    
+
     @Override
     public long getAsLong() {
         try {

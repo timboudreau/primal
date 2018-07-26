@@ -29,8 +29,8 @@ import com.mastfrog.util.collections.Longerator;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import org.junit.Test;
 import static org.junit.Assert.*;
+import org.junit.Test;
 
 /**
  *
@@ -49,7 +49,7 @@ public class SieveMainTest {
         try {
             SieveMain.main("-m", "10000", "-o", batched.toString(), "-l", "-z", "1000", "-p", "-s");
             try (SeqFile sf = new SeqFile(batched)) {
-//                assertEquals(1112, sf.header().count());
+                assertEquals(1229, sf.header().count());
             }
         } finally {
             if (Files.exists(batched)) {

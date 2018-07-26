@@ -23,7 +23,7 @@
  */
 package com.mastfrog.primal.sieve;
 
-import com.mastfrog.util.Checks;
+import com.mastfrog.util.preconditions.Checks;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
 
@@ -45,11 +45,14 @@ public class Sieve {
      * sieving should terminate
      * @param consumer A consumer that will be passed prime numbers as they are
      * sieved
+     * @param total The maximum number of primes to generate (may be less if
+     * max value is reached)
+     *
      */
-    public static long sieve(long maxValue, LongConsumer consumer) {
+    public static long sieve(long maxValue, LongConsumer consumer, long total) {
         Checks.notNull("consumer", consumer);
         Checks.nonNegative("maxValue", maxValue);
-        return new SieveImpl(maxValue, consumer).sieve();
+        return new SieveImpl(maxValue, consumer, total).sieve();
     }
 
     /**
@@ -76,7 +79,7 @@ public class Sieve {
      * sieving should terminate
      * @return The last prime generated
      */
-    public static long sieve(long startValue, LongSupplier preceding, LongConsumer consumer, long maxValue) {
+    public static long sieve(long startValue, LongSupplier preceding, LongConsumer consumer, long maxValue, long total) {
         Checks.notNull("preceding", preceding);
         Checks.notNull("consumer", consumer);
         Checks.nonNegative("startValue", startValue);
@@ -84,7 +87,7 @@ public class Sieve {
         if (maxValue <= startValue) {
             throw new IllegalArgumentException("Start value must be < max value - " + startValue + " > " + maxValue);
         }
-        return new SieveImpl(startValue, preceding, consumer, maxValue).sieve();
+        return new SieveImpl(startValue, preceding, consumer, maxValue, total).sieve();
     }
 
 }

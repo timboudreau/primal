@@ -26,13 +26,13 @@ package com.mastfrog.primes;
 import com.github.jinahya.bit.io.DefaultBitInput;
 import com.mastfrog.primes.SeqFileHeader.EntryPosition;
 import static com.mastfrog.primes.SeqFileHeader.bitsRequired;
-import com.mastfrog.util.Checks;
-import com.mastfrog.util.Exceptions;
-import com.mastfrog.util.Strings;
 import com.mastfrog.util.collections.IntSet;
+import com.mastfrog.util.preconditions.Checks;
+import com.mastfrog.util.preconditions.Exceptions;
 import com.mastfrog.util.collections.Longerator;
 import com.mastfrog.util.search.Bias;
 import com.mastfrog.util.search.BinarySearch;
+import com.mastfrog.util.strings.Strings;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -48,8 +48,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * A file containing a sequence of numbers, where, to save space, numbers are
@@ -73,9 +71,9 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
 
     /**
      * Create a new file for the passed path in READ mode.
-     * 
+     *
      * @param path
-     * @throws IOException 
+     * @throws IOException
      */
     public SeqFile(Path path) throws IOException {
         this(path, Mode.READ);
@@ -308,6 +306,47 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
         }
     }
 
+    long encodeFull(long prime) {
+        return prime == 1L ? 1L : (prime - 1L) / 2L;
+    }
+
+    int encodeOffset(int offset) {
+        switch (offset) {
+            case 2:
+                offset = 1;
+                break;
+            case 1:
+                offset = 0;
+                break;
+            default:
+                offset /= 2;
+        }
+        return offset;
+    }
+
+    int decodeOffset(int offset) {
+        switch (offset) {
+            case 0:
+                offset = 1;
+                break;
+            case 1:
+                offset = 2;
+                break;
+            default:
+                offset *= 2;
+        }
+        return offset;
+    }
+
+    long decodeFull(long result) {
+        if (result == 0) {
+            result = 2;
+        } else {
+            result = (result * 2) + 1;
+        }
+        return result;
+    }
+
     NumberSequenceReader seek(long index) throws IOException {
         if (index == 0) {
             return new NumberSequenceReader(this);
@@ -322,18 +361,17 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
             while (bitsRemaining > 0) {
                 int toRead = Math.min(bitsRemaining, 63);
                 cumulative += toRead;
-                bits.readLong(false, toRead);
+                bits.readLong(true, toRead);
                 bitsRemaining -= toRead;
             }
         }
-        long result = bits.readLong(true, header.bitsPerFullEntry());
+        long readFull = bits.readLong(true, header.bitsPerFullEntry());
+        long result = decodeFull(readFull);
         cumulative += header.bitsPerFullEntry();
         for (int i = 0; i < pos.offsetIntoFrame; i++) {
             cumulative += header.bitsPerOffsetEntry();
-            int offset = bits.readInt(true, header.bitsPerOffsetEntry()) * 2;
-            if (offset == 0) {
-                offset = 1;
-            }
+            int readOffset = bits.readInt(true, header.bitsPerOffsetEntry());
+            int offset = decodeOffset(readOffset);
             result += offset;
         }
         return new NumberSequenceReader(this, bits, cumulative, index - 1, result);
@@ -352,14 +390,10 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
                 bitsRemaining -= toRead;
             }
         }
-        long result = bits.readLong(true, header.bitsPerFullEntry());
+        long result = decodeFull(bits.readLong(true, header.bitsPerFullEntry()));
         for (int i = 0; i < pos.offsetIntoFrame; i++) {
-            int offset = bits.readInt(true, header.bitsPerOffsetEntry());
-            if (offset == 0) {
-                offset = 1;
-            } else {
-                offset *= 2;
-            }
+            int readOffset = bits.readInt(true, header.bitsPerOffsetEntry());
+            int offset = decodeOffset(readOffset);
             result += offset;
         }
         return result;
@@ -463,7 +497,14 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
     @Override
     public void close() throws IOException {
         if (channel.isOpen()) {
+            flush();
             channel.close();
+        }
+    }
+
+    void flush() throws IOException {
+        if (this.mode.isWrite() && this.mode.isSync()) {
+            channel.force(true);
         }
     }
 
@@ -471,7 +512,25 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
         READ,
         WRITE,
         APPEND,
-        OVERWRITE;
+        WRITE_SYNC,
+        APPEND_SYNC,
+        OVERWRITE,
+        OVERWRITE_SYNC;
+
+        boolean isSync() {
+            switch (this) {
+                case WRITE_SYNC:
+                case APPEND_SYNC:
+                case OVERWRITE_SYNC:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        boolean isWrite() {
+            return !isRead();
+        }
 
         void check(Path path) throws IOException {
             if (Files.exists(path) && Files.isDirectory(path)) {
@@ -490,10 +549,16 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
             switch (this) {
                 case WRITE:
                     return EnumSet.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+                case WRITE_SYNC:
+                    return EnumSet.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.SYNC);
                 case OVERWRITE:
                     return EnumSet.of(StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                case OVERWRITE_SYNC:
+                    return EnumSet.of(StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE, StandardOpenOption.SYNC);
                 case APPEND:
                     return EnumSet.of(StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE);
+                case APPEND_SYNC:
+                    return EnumSet.of(StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE, StandardOpenOption.SYNC);
                 case READ:
                     return EnumSet.of(StandardOpenOption.READ);
                 default:
@@ -503,10 +568,6 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
 
         boolean isRead() {
             return this == READ;
-        }
-
-        boolean isWrite() {
-            return this != READ;
         }
     }
 

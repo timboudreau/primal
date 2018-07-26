@@ -11,3 +11,5 @@ target/
 nb-configuration.xml
 nbproject/
 hs_err_*
+sieve-file/primal
+

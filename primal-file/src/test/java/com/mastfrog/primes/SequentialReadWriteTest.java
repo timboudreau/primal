@@ -26,6 +26,7 @@ package com.mastfrog.primes;
 import com.mastfrog.primes.SeqFile.Mode;
 import com.mastfrog.util.collections.Longerator;
 import com.mastfrog.util.search.Bias;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -33,8 +34,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
+import java.util.function.LongSupplier;
 import org.junit.After;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -45,14 +49,119 @@ import org.junit.Test;
  */
 public class SequentialReadWriteTest {
 
+    static class LongGen implements LongSupplier {
+
+        private final long first;
+        private long value;
+        private int iteration;
+        private final int maxGap;
+        int gap;
+
+        LongGen(long first, int gapBits) {
+            this.first = first == 2 ? 2 : first % 2 == 0 ? first + 1 : first;
+            this.maxGap = (int) Math.pow(2, gapBits);
+            this.value = first;
+        }
+
+        @Override
+        public long getAsLong() {
+            // Returns a sequence of numbers with the characteristics of primes - the
+            // only even number that can be returned is 2, all other numbers are odd
+            iteration++;
+            if (iteration == 1) {
+                return first;
+            }
+            if (value == 2) {
+                value++;
+                return value;
+            }
+            gap = Math.max(2, iteration % maxGap);
+            long result = value + gap;
+            if (result % 2 == 0) {
+                result++;
+            }
+            return value = result;
+        }
+
+        void reset() {
+            iteration = 0;
+            value = first;
+        }
+    }
+
+    @Test
+    public void sanityCheckGen() {
+        LongGen gen = new LongGen(2000000, 11);
+        long last = gen.first - 1;
+        for (int i = 0; i < gen.maxGap * 16; i++) {
+            long val = gen.getAsLong();
+            assertTrue(val == 2 || val % 2 != 0);
+            assertTrue(val > last);
+            last = val;
+        }
+        gen.reset();
+        LongGen nue = new LongGen(gen.first, 11);
+        for (int i = 0; i < gen.maxGap * 16; i++) {
+            long val = nue.getAsLong();
+            assertEquals(gen.getAsLong(), val);
+        }
+    }
+
+    @Test
+    public void testLargeNumbersAndGaps() throws Throwable {
+        testLargeNumbersAndGaps(1212600818, 11);
+    }
+
+    public void testLargeNumbersAndGaps(long start, int bits) throws Throwable {
+        Path path = this.path;
+        SeqFileHeader hdr = new SeqFileHeader(bits, 31, 16);
+        int total = 0;
+        int iterations = 16;
+        LongGen gen = new LongGen(start, bits);
+        try (SeqFile writeFile = new SeqFile(path, Mode.OVERWRITE_SYNC, Optional.of(hdr))) {
+            try (NumberSequenceWriter writer = new NumberSequenceWriter(writeFile)) {
+                for (int j = 0; j < iterations; j++) {
+                    for (int i = 0; i <= gen.maxGap; i += 2) {
+                        long val = gen.getAsLong();
+                        writer.accept(val);
+                        total++;
+                    }
+                }
+                if (writeFile.channel().isOpen()) {
+                    writeFile.channel().force(true);
+                }
+            }
+        }
+        Thread.sleep(200);
+        int readTotal = 0;
+        gen.reset();
+        try (SeqFile readFile = new SeqFile(path, Mode.READ, Optional.empty())) {
+            NumberSequenceReader reader = new NumberSequenceReader(readFile);
+            for (int j = 0; j < iterations; j++) {
+                for (int i = 0; i <= gen.maxGap; i += 2) {
+                    long val = reader.next();
+                    long expect = gen.getAsLong();
+                    assertEquals(readTotal + "." + j + "." + i + " gap " + gen.gap + " having read "
+                            + reader.count() + " cumBits " + reader.cumulativeBitsRead + " last="
+                            + reader.last() + " at " + reader.pos() + " for start " + start
+                            + " bits " + bits, expect, val);
+                    readTotal++;
+                }
+            }
+        }
+        assertEquals(total, readTotal);
+    }
+
     @Test
     public void testReadWrite() throws Throwable {
         SeqFileHeader hdr = new SeqFileHeader(11, 36, 16);
+        Path path = this.path2;
 
-        try (SeqFile writeFile = new SeqFile(path, Mode.WRITE, Optional.of(hdr))) {
+        try (SeqFile writeFile = new SeqFile(path, Mode.WRITE_SYNC, Optional.of(hdr))) {
 //            try (AsyncNumberSequenceWriter writer = new AsyncNumberSequenceWriter(new NumberSequenceWriter(writeFile))) {
             try (NumberSequenceWriter writer = new NumberSequenceWriter(writeFile)) {
                 for (int i = 0; i < PRIMES.length; i++) {
+                    writer.debug = i < 3;
                     long prime = PRIMES[i];
                     writer.accept(prime);
                 }
@@ -61,9 +170,11 @@ public class SequentialReadWriteTest {
         try (SeqFile readFile = new SeqFile(path, Mode.READ, Optional.empty())) {
             NumberSequenceReader reader = new NumberSequenceReader(readFile);
             for (int i = 0; i < PRIMES.length; i++) {
+                reader.debug = i < 3;
                 long expect = PRIMES[i];
                 long got = reader.next();
-                assertEquals("Mismatch at " + i, expect, got);
+                assertEquals("Mismatch at " + i + " reader count " + reader.count() + " bitsRead "
+                        + reader.cumulativeBitsRead + " last " + reader.last(), expect, got);
             }
             assertEquals(PRIMES.length, readFile.header().count());
             Longerator longs = readFile.longerator();
@@ -81,7 +192,7 @@ public class SequentialReadWriteTest {
             assertEquals(-1, longs.getAsLong());
             assertEquals(-1, longs.getAsLong());
             assertEquals(-1, longs.getAsLong());
-            
+
             readFile.top();
             reader = new NumberSequenceReader(readFile);
             for (int i = 0; i < readFile.header().count(); i++) {
@@ -90,16 +201,20 @@ public class SequentialReadWriteTest {
             assertEquals(-1, reader.getAsLong());
             assertEquals(-1, reader.getAsLong());
             assertEquals(-1, reader.getAsLong());
-            
 
             List<Long> l = new ArrayList<>();
             for (long i = 0; i < PRIMES.length; i++) {
                 l.add(i);
             }
-            Collections.shuffle(l);
-            for (Long test : l) {
-                long val = readFile.get(test);
-                assertEquals("Failed to get value at " + test + " was " + val, PRIMES[test.intValue()], val);
+
+            for (int i = 0; i < 200; i++) {
+                Random rnd = new Random(9329092 + i);
+                Collections.shuffle(l, rnd);
+                for (Long test : l) {
+                    long val = readFile.get(test);
+                    assertEquals("Failed to get value at " + test + " was " + val
+                            + " " + readFile, PRIMES[test.intValue()], val);
+                }
             }
 
             for (Long index : l) {
@@ -118,30 +233,38 @@ public class SequentialReadWriteTest {
                 }
             }
             Longerator l1 = readFile.longerator(5);
-            assertEquals(PRIMES[5], l1.next());
+            assertEquals("Wrong value at " + 5, PRIMES[5], l1.next());
             l1 = readFile.longerator(100);
-            assertEquals(PRIMES[100], l1.next());
-            l1 = readFile.longeratorFromValue(PRIMES[101]-1, Bias.FORWARD);
-            assertEquals(PRIMES[101], l1.next());
-            l1 = readFile.longeratorFromValue(PRIMES[101]-1, Bias.BACKWARD);
-            assertEquals(PRIMES[100], l1.next());
+            assertEquals("Wrong value at " + 100, PRIMES[100], l1.next());
+            l1 = readFile.longeratorFromValue(PRIMES[101] - 1, Bias.FORWARD);
+            assertEquals("Wrong value at " + 101, PRIMES[101], l1.next());
+            l1 = readFile.longeratorFromValue(PRIMES[101] - 1, Bias.BACKWARD);
+            assertEquals("Wrong value at " + 100 + " seeking backward", PRIMES[100], l1.next());
 
-            long searchBeforeBegin = readFile.search(PRIMES[0]-1, Bias.BACKWARD);
+            long searchBeforeBegin = readFile.search(PRIMES[0] - 1, Bias.BACKWARD);
             assertEquals(-1, searchBeforeBegin);
-            
-            long searchPastEnd = readFile.search(PRIMES[PRIMES.length-1] + 1, Bias.FORWARD);
+
+            long searchPastEnd = readFile.search(PRIMES[PRIMES.length - 1] + 1, Bias.FORWARD);
             assertEquals(-1, searchPastEnd);
-            
         }
     }
 
     private SeqFile readFile;
     private SeqFile writeFile;
     private Path path;
+    private Path path2;
+    static volatile int ix = 0;
 
     @Before
-    public void setup() {
-        path = Paths.get(System.getProperty("java.io.tmpdir"), getClass().getSimpleName() + "-" + System.currentTimeMillis());
+    public void setup() throws IOException {
+        path = Paths.get(System.getProperty("java.io.tmpdir"), getClass().getSimpleName() + "-" + System.currentTimeMillis() + "." + ix++);
+        if (Files.exists(path)) {
+            Files.delete(path);
+        }
+        path2 = Paths.get(System.getProperty("java.io.tmpdir"), getClass().getSimpleName() + "-" + System.currentTimeMillis() + "." + ix++);
+        if (Files.exists(path)) {
+            Files.delete(path);
+        }
     }
 
     @After

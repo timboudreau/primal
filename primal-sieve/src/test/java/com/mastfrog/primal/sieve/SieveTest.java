@@ -37,17 +37,18 @@ public class SieveTest {
 
     @Test(timeout = 5000)
     public void testCorrectness() throws Exception {
-        System.out.println("SEC LEN: " + SECOND_THOUSAND_PRIMES.length);
         LC initialPrimes = new LC();
-        SieveImpl sieve = new SieveImpl(FIRST_THOUSAND_PRIMES[FIRST_THOUSAND_PRIMES.length - 1] + 1, initialPrimes);
+        SieveImpl sieve = new SieveImpl(FIRST_THOUSAND_PRIMES[FIRST_THOUSAND_PRIMES.length - 1] + 1, initialPrimes, -1);
         sieve.sieve();
         for (int i = 0; i < FIRST_THOUSAND_PRIMES.length; i++) {
             initialPrimes.assertValue(i, FIRST_THOUSAND_PRIMES[i]);
         }
+        initialPrimes.assertValue(0, 2);
         initialPrimes.assertValue(FIRST_THOUSAND_PRIMES.length + 1, -1);
+        initialPrimes.reset();
 
         LC nextPrimes = new LC();
-        SieveImpl continuation = new SieveImpl(FIRST_THOUSAND_PRIMES[FIRST_THOUSAND_PRIMES.length-1], initialPrimes, nextPrimes, 17388);
+        SieveImpl continuation = new SieveImpl(FIRST_THOUSAND_PRIMES[FIRST_THOUSAND_PRIMES.length - 1], initialPrimes, nextPrimes, 17388, -1);
         continuation.sieve();
 
         for (int i = 0; i < SECOND_THOUSAND_PRIMES.length; i++) {
@@ -55,7 +56,7 @@ public class SieveTest {
         }
         nextPrimes.assertValue(SECOND_THOUSAND_PRIMES.length + 1, -1);
     }
-    
+
     private final class LC implements LongConsumer, LongSupplier {
 
         private final long[] longs = new long[FIRST_THOUSAND_PRIMES.length + 2];
@@ -64,7 +65,6 @@ public class SieveTest {
 
         LC() {
             Arrays.fill(longs, -1);
-//            longs[longs.length-1] = -2; // so if we grab that, it's not -1
         }
 
         @Override
@@ -74,7 +74,11 @@ public class SieveTest {
             }
             longs[writeIndex++] = value;
         }
-        
+
+        void reset() {
+            readIndex = 0;
+        }
+
         void assertNotDivisible(long val, long by) {
             boolean result = val > by && (val % by == 0);
             assertFalse("Value " + val + " is divisible by " + by, result);
@@ -87,7 +91,8 @@ public class SieveTest {
         @Override
         public long getAsLong() {
             if (readIndex < longs.length) {
-                return longs[readIndex++];
+                long result = longs[readIndex++];
+                return result;
             }
             return -1;
         }
@@ -179,7 +184,7 @@ public class SieveTest {
         7789, 7793, 7817, 7823, 7829, 7841, 7853, 7867, 7873, 7877, 7879, 7883,
         7901, 7907, 7919};
 
-    static final long[] SECOND_THOUSAND_PRIMES = { 
+    static final long[] SECOND_THOUSAND_PRIMES = {
         7927, 7933, 7937, 7949, 7951, 7963, 7993, 8009, 8011, 8017,
         8039, 8053, 8059, 8069, 8081, 8087, 8089, 8093, 8101, 8111,
         8117, 8123, 8147, 8161, 8167, 8171, 8179, 8191, 8209, 8219,

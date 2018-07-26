@@ -25,7 +25,7 @@ package com.mastfrog.primes;
 
 import com.github.jinahya.bit.io.BitOutput;
 import com.github.jinahya.bit.io.DefaultBitOutput;
-import com.mastfrog.util.Exceptions;
+import com.mastfrog.util.preconditions.Exceptions;
 import java.io.IOException;
 import java.util.function.LongConsumer;
 
@@ -38,7 +38,7 @@ import java.util.function.LongConsumer;
 public class NumberSequenceWriter implements AutoCloseable, LongConsumer {
 
     private final SeqFile file;
-    private long lastValue;
+    private long lastValue = -1;
     private long count;
     private final BitOutput out;
     private final FileChannelByteOutput byteOut;
@@ -56,27 +56,62 @@ public class NumberSequenceWriter implements AutoCloseable, LongConsumer {
     public long written() {
         return count;
     }
-    
+
     public int maxOffset() {
         return maxOffset;
     }
 
     private int maxOffset = 0;
+
+    long lastValue() {
+        return lastValue;
+    }
+
+    boolean debug;
+
     public void write(long prime) throws IOException {
         if (prime == -1) {
             return;
         }
         SeqFileHeader header = file.header();
         if (count % header.offsetEntriesPerFullEntry() == 0) {
-            out.writeLong(true, header.bitsPerFullEntry(), prime);
-        } else {
-            int offset = (int) (prime - lastValue);
-            if (offset == 1) {
-                offset = 0;
-            } else {
-                offset /= 2;
+//            out.writeLong(true, header.bitsPerFullEntry(), prime);
+            long toWrite = file.encodeFull(prime);
+            out.writeLong(true, header.bitsPerFullEntry(), toWrite);
+            if (debug) {
+                System.out.println("WRITE FULL ENTRY AT " + count + " for " + prime + " as " + toWrite);
             }
+        } else {
+            if (prime == lastValue) {
+                throw new IllegalArgumentException("Computed same value " + prime + " twice");
+            }
+            int offset = (int) (prime - lastValue);
+            assert offset == 1 || (offset % 2) == 0 : "Not a possible prime gap: " + offset + " for " + prime + " with last " + lastValue;
             maxOffset = Math.max(maxOffset, offset);
+            offset = file.encodeOffset(offset);
+            boolean asserts = false;
+            assert asserts = true;
+            if (debug && asserts) {
+                // debug
+                int recomputedOffset = offset;
+                switch (recomputedOffset) {
+                    case 0:
+                        recomputedOffset = 1;
+                        break;
+                    case 1:
+                        recomputedOffset = 2;
+                        break;
+                    default:
+                        recomputedOffset *= 2;
+                }
+                long reconstructed = recomputedOffset + lastValue;
+                assert recomputedOffset == prime - lastValue : " recomputedOffset " + recomputedOffset + " should be " + (prime - lastValue)
+                        + " (actual offset) for " + prime + " last val " + lastValue + " orig offset " + offset;
+                assert prime == reconstructed : "Bad calculation " + lastValue + " -> " + prime + " storedOffset " + offset + " recomputedOffset " + recomputedOffset + " actual offset " + (prime - lastValue);
+            }
+            if (debug) {
+                System.out.println("Write gap entry " + count + " for " + prime + " realGap " + (prime - lastValue) + " written as " + offset);
+            }
             out.writeChar(header.bitsPerOffsetEntry(), (char) offset);
         }
         count++;

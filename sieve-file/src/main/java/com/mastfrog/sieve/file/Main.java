@@ -23,7 +23,7 @@
  */
 package com.mastfrog.sieve.file;
 
-import com.mastfrog.util.Strings;
+import com.mastfrog.util.strings.Strings;
 import com.mastfrog.util.collections.CollectionUtils;
 import java.util.Map;
 

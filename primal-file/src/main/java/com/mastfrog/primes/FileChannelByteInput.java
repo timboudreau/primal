@@ -24,10 +24,8 @@
 package com.mastfrog.primes;
 
 import com.github.jinahya.bit.io.AbstractByteInput;
-import com.mastfrog.util.Exceptions;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 
 /**
@@ -54,7 +52,9 @@ public class FileChannelByteInput extends AbstractByteInput<FileChannel> {
         }
         if (first || !buf.hasRemaining()) {
             first = false;
-            done = source.read(buf) == -1;
+            buf.rewind();
+            int read = source.read(buf);
+            done = read == -1;
             buf.flip();
         }
         return buf.get();

@@ -24,9 +24,7 @@
 package com.mastfrog.sieve.file;
 
 import com.mastfrog.primal.sieve.Sieve;
-import com.mastfrog.primes.AsyncNumberSequenceWriter;
 import com.mastfrog.primes.MultiSeqFileReader;
-import com.mastfrog.primes.NumberSequenceReader;
 import com.mastfrog.primes.NumberSequenceWriter;
 import com.mastfrog.primes.SeqFile;
 import com.mastfrog.primes.SeqFile.Mode;
@@ -34,11 +32,10 @@ import com.mastfrog.primes.SeqFileHeader;
 import com.mastfrog.settings.Settings;
 import com.mastfrog.settings.SettingsBuilder;
 import static com.mastfrog.sieve.file.Main.exit;
-import com.mastfrog.util.Exceptions;
-import com.mastfrog.util.Strings;
+import com.mastfrog.util.preconditions.Exceptions;
+import com.mastfrog.util.strings.Strings;
 import com.mastfrog.util.collections.CollectionUtils;
 import com.mastfrog.util.collections.IntSet;
-import com.mastfrog.util.collections.Longerator;
 import com.mastfrog.util.time.TimeUtil;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -50,7 +47,6 @@ import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.StringTokenizer;
@@ -77,14 +73,16 @@ public class SieveMain {
     static final String LOG = "log";
     static final String PROGRESS = "progress";
     static final String VERBOSE = "verbose";
+    static final String NATIVE = "native";
     static final String HELP = "help";
+    static final String TOTAL = "total";
 
     static final long BATCH_ABOVE = 10_000_000_000L;
     static int tempFileCount = 1;
     private static final NumberFormat SEVEN_DIGITS = new DecimalFormat("0000000");
     static final String TEMP_FILE_NAME_BASE = Long.toString(System.currentTimeMillis(), 36);
 
-    private static final Map<Character, String> SHORT_COMMANDS = CollectionUtils.<Character, String>map('o').to(OUTFILE)
+    static final Map<Character, String> SHORT_COMMANDS = CollectionUtils.<Character, String>map('o').to(OUTFILE)
             .map('w').to(OVERWRITE)
             .map('m').to(MAX_VALUE)
             .map('b').to(BITS_PER_FULL_ENTRY)
@@ -92,14 +90,17 @@ public class SieveMain {
             .map('e').to(ENTRIES_PER_FULL_ENTRY)
             .map('z').to(BATCH_SIZE)
             .map('i').to(INFILE)
+            .map('n').to(NATIVE)
             .map('l').to(LOG)
             .map('s').to(STATS)
             .map('p').to(PROGRESS)
             .map('v').to(VERBOSE)
             .map('h').to(HELP)
+            .map('t').to(TOTAL)
+            .map('n').to(NATIVE)
             .build();
 
-    private static final Map<String, String> HELP_COMMANDS = CollectionUtils.<String, String>map(HELP).to("Print this help.")
+    static final Map<String, String> HELP_COMMANDS = CollectionUtils.<String, String>map(HELP).to("Print this help.")
             .map(OUTFILE).to("The output file (if unspecified, primes.seq in the current directory is used)")
             .map(INFILE).to("The input file, if continuing a sequence")
             .map(MAX_VALUE).to("Compute primes up to this value")
@@ -108,9 +109,11 @@ public class SieveMain {
             .map(BITS_PER_OFFSET_ENTRY).to("The number of bits to use for each offset entry (must fit the biggest gap between primes).")
             .map(ENTRIES_PER_FULL_ENTRY).to("The number of offset entries per full entry.")
             .map(BATCH_SIZE).to("The value above which sieving should be done in batches to avoid memory limits (default " + BATCH_ABOVE + ")")
+            .map(NATIVE).to("Use the unix utility primesieve instead of the java sieve (must be on $PATH)")
             .map(LOG).to("Log output as comma-separated values to the standard output.")
             .map(STATS).to("Log statistics about generation progress.")
             .map(PROGRESS).to("Log progress periodically.")
+            .map(TOTAL).to("Maximum number of primes to sieve (may be less if max value is reached)")
             .map(VERBOSE).to("Equivalent to --log --stats --verbose.")
             .buildLinkedHashMap();
 
@@ -131,7 +134,7 @@ public class SieveMain {
         return sb.append('\n').toString();
     }
 
-    private static void printHelpAndExit() {
+    static void printHelpAndExit() {
         Map<String, Character> cmdForKey = CollectionUtils.reverse(SHORT_COMMANDS);
         StringBuilder sb = new StringBuilder("Usage:\njava -jar sieve.jar --outfile/-o [file] --max/-m [number] \\\n\t --bits/-b [numbits] --overwrite/-w --entries [num]\\\n\t --offsetbits/-s [num] --infile [file] --log\n\n");
         HELP_COMMANDS.entrySet().forEach((e) -> {
@@ -160,6 +163,10 @@ public class SieveMain {
         if (help) {
             printHelpAndExit();
         }
+        if (settings.getBoolean(NATIVE, false)) {
+            NativeSieveMain.main(args);
+            return;
+        }
         long max = settings.getLong(MAX_VALUE, 1_000_000L);
         if (max == 0) {
             max = Long.MAX_VALUE;
@@ -169,6 +176,7 @@ public class SieveMain {
         String infile = settings.getString(INFILE);
         boolean log = settings.getBoolean(LOG, false);
         boolean stats = settings.getBoolean(STATS, false);
+        long total = settings.getLong(TOTAL, -1);
 
         if (outfile == null && !log) {
             System.err.println("No output file specified - will log to standard output");
@@ -273,11 +281,11 @@ public class SieveMain {
                                         }
                                     });
                                     if (tempFiles.isEmpty()) {
-                                        last = Sieve.sieve(batch, cons);
+                                        last = Sieve.sieve(batch, cons, total);
                                     } else {
                                         System.err.println("Batch " + last + " to " + (last + batchThreshold) + " written: " + writer.writer.written() + " - will "
                                                 + "replay " + tempFiles.size() + " temporary files");
-                                        last = Sieve.sieve(last, new MultiSeqFileReader(tempFiles), cons, last + batchThreshold);
+                                        last = Sieve.sieve(last, new MultiSeqFileReader(tempFiles), cons, last + batchThreshold, total);
                                     }
                                     tempFiles.add(pth);
                                 }
@@ -298,11 +306,11 @@ public class SieveMain {
                         }
                     }
                 } else {
-                    Sieve.sieve(max, consumer);
+                    Sieve.sieve(max, consumer, total);
                 }
             } else {
                 try (MultiSeqFileReader file = MultiSeqFileReader.fromCommaDelimited(infile)) {
-                    Sieve.sieve(file.last(), file, consumer, max);
+                    Sieve.sieve(file.last(), file, consumer, max, total);
                 }
             }
         } finally {
@@ -315,7 +323,6 @@ public class SieveMain {
 
     private static Path tempFile(String action) {
         String tempFileBase = action + "-" + TEMP_FILE_NAME_BASE + "-" + SEVEN_DIGITS.format(tempFileCount++);
-        Path tmp = Paths.get(System.getProperty("java.io.tmpdir"));
         String filename = tempFileBase + SEVEN_DIGITS.format(tempFileCount++) + ".tmp";
         return Paths.get(System.getProperty("java.io.tmpdir"), filename);
     }
@@ -425,10 +432,11 @@ public class SieveMain {
                     gaps.add(gap);
                 }
                 if (count > 0 && ZonedDateTime.now().isAfter(nextLog)) {
-                    System.err.println("Sieved " + NUMBERS.format(count) + " primes in last " + TimeUtil.format(Duration.between(lastLog, ZonedDateTime.now()), true)
-                            + " total " + NUMBERS.format(count) + ";  most recent: " + value + "\nElapsed time: " + TimeUtil.format(Duration.between(startTime, ZonedDateTime.now()), true));
+                    System.err.println("Sieved " + NUMBERS.format(count - countAtLastLog) + " primes in last " + TimeUtil.format(Duration.between(lastLog, ZonedDateTime.now()), false)
+                            + " total " + NUMBERS.format(count) + ";  most recent: " + value + "\nElapsed time: " + TimeUtil.format(Duration.between(startTime, ZonedDateTime.now()), false));
                     lastLog = nextLog;
                     nextLog = ZonedDateTime.now().plus(interval);
+                    countAtLastLog = count;
                     logDetails();
                 }
                 prev = value;

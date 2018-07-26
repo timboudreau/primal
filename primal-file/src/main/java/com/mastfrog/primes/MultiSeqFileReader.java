@@ -23,8 +23,8 @@
  */
 package com.mastfrog.primes;
 
-import com.mastfrog.util.Exceptions;
-import com.mastfrog.util.Strings;
+import com.mastfrog.util.preconditions.Exceptions;
+import com.mastfrog.util.strings.Strings;
 import com.mastfrog.util.collections.Longerator;
 import com.mastfrog.util.search.Bias;
 import java.io.IOException;
@@ -36,8 +36,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.function.LongSupplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  *

@@ -45,6 +45,7 @@ class SieveImpl {
     private final LongSupplier preceding;
     private final long startValue;
     private long lastValue;
+    private long total;
 
     /**
      * Sieve for primes, starting from 2.
@@ -54,10 +55,8 @@ class SieveImpl {
      * @param consumer A consumer that will be passed prime numbers as they are
      * sieved
      */
-    SieveImpl(long maxValue, LongConsumer consumer) {
-        // PENDING:  Coule pass in preceding files of primes, and clear bits for all of
-        // those primes before continuing from the start point - this would let us
-        // compute higher numbers with finite memory
+    SieveImpl(long maxValue, LongConsumer consumer, long total) {
+        this.total = total;
         this.maxValue = maxValue + 1;
         set = new OpenBitSet(maxValue);
         set.flip(2, maxValue);
@@ -92,7 +91,8 @@ class SieveImpl {
      * @param maxValue A value above which no primes should be computed and
      * sieving should terminate
      */
-    SieveImpl(long startValue, LongSupplier preceding, LongConsumer consumer, long maxValue) {
+    SieveImpl(long startValue, LongSupplier preceding, LongConsumer consumer, long maxValue, long total) {
+        this.total = total;
         this.preceding = preceding;
         this.consumer = consumer;
         this.maxValue = maxValue + 1;
@@ -114,10 +114,11 @@ class SieveImpl {
                         + " primes up to the starting point must be passed here or sieving will "
                         + "produce wrong results.");
             }
+            first = false;
             for (long ll : new long[]{2, 3, 5, 7}) {
                 if (curr > ll && (curr % ll) == 0) {
                     throw new IllegalArgumentException("Preceding primes contains non-prime value: "
-                            + curr + " at " + index);
+                            + curr + " at " + index + " previous value was " + prev);
                 }
             }
 
@@ -177,6 +178,7 @@ class SieveImpl {
         }
     }
 
+    long count;
     public long sieve() {
         long i = 2;
         LongInOutFunction inner;
@@ -188,6 +190,11 @@ class SieveImpl {
         }
         do {
             i = inner.process(i);
+            if (total != -1L) {
+                if (++count == total) {
+                    break;
+                }
+            }
         } while (i > 0);
         consumer.accept(-1);
         return lastValue;
