@@ -28,6 +28,7 @@ import java.io.IOException;
 import static java.lang.Math.floor;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.channels.SeekableByteChannel;
 import java.util.Arrays;
 
 /**
@@ -48,6 +49,18 @@ public class SeqFileHeader {
     private long count;
     private int maxOffset;
 
+    public SeqFileHeader(int bitsPerOffsetEntry, int bitsPerFullEntry, int offsetEntriesPerFullEntry, long fileSize, long count, int maxOffset) {
+        Checks.nonNegative("bytesPerEntry", bitsPerOffsetEntry);
+        Checks.nonNegative("frameHeaderLength", bitsPerFullEntry);
+        Checks.nonNegative("entriesPerFrame", offsetEntriesPerFullEntry);
+        this.offsetEntriesPerFullEntry = offsetEntriesPerFullEntry;
+        this.bitsPerOffsetEntry = bitsPerOffsetEntry;
+        this.bitsPerFullEntry = bitsPerFullEntry;
+        this.version = SUPPORTED_VERSION;
+        this.fileSize = fileSize;
+        this.count = count;
+        this.maxOffset = maxOffset;
+    }
     public SeqFileHeader(int bitsPerOffsetEntry, int bitsPerFullEntry, int offsetEntriesPerFullEntry) {
         this(SUPPORTED_VERSION, bitsPerOffsetEntry, bitsPerFullEntry, offsetEntriesPerFullEntry);
     }
@@ -67,8 +80,9 @@ public class SeqFileHeader {
         this.fileSize = 0;
     }
 
-    SeqFileHeader(FileChannel channel) throws IOException {
-        if (channel.size() < headerLength) {
+    public SeqFileHeader(SeekableByteChannel channel) throws IOException {
+        long size = channel.size();
+        if (size < headerLength) {
             throw new IOException("File not long enough even for header block "
                     + "- need headerLength bytes but length is " + channel.size());
         }
@@ -123,7 +137,7 @@ public class SeqFileHeader {
             throw new IOException("Negative max offset (at "
                     + (buf.position() + initialPos) + "): " + maxOffset);
         }
-        fileSize = channel.size();
+        fileSize = size;
     }
 
     static class EntryPosition {
@@ -177,7 +191,7 @@ public class SeqFileHeader {
         }
     }
 
-    long estimatedCount(long fileSize) {
+    public long estimatedCount(long fileSize) {
         long dataBytes = fileSize - headerLength;
         long dataBits = dataBytes * 8;
         long bitsPerFrame = bitsPerFullEntry + (bitsPerOffsetEntry * (offsetEntriesPerFullEntry - 1));
@@ -231,7 +245,7 @@ public class SeqFileHeader {
         return count;
     }
 
-    public SeqFileHeader updateCountAndSave(long newCount, int maxOffset, FileChannel channel) throws IOException {
+    public SeqFileHeader updateCountAndSave(long newCount, int maxOffset, SeekableByteChannel channel) throws IOException {
         long oldCount = this.count;
         int oldMaxOffset = this.maxOffset;
         this.count = newCount;
@@ -275,7 +289,7 @@ public class SeqFileHeader {
         return fileSize - headerLength;
     }
 
-    public void write(FileChannel ch) throws IOException {
+    public void write(SeekableByteChannel ch) throws IOException {
         ByteBuffer b = ByteBuffer.allocateDirect(HEADER_LENGTH);
         b.put(MAGIC);
         b.put((byte) version);
@@ -286,7 +300,9 @@ public class SeqFileHeader {
         b.putInt(maxOffset);
         b.flip();
         ch.write(b);
-        ch.force(true);
+        if (ch instanceof FileChannel) {
+            ((FileChannel)ch).force(true);
+        }
     }
 
     @Override
@@ -362,7 +378,7 @@ public class SeqFileHeader {
 
     private static int log2(long bits) {
         if (bits == 0) {
-            return 0; // or throw exception
+            return 0;
         }
         return 63 - Long.numberOfLeadingZeros(bits);
     }

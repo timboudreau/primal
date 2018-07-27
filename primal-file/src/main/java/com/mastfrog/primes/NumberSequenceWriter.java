@@ -53,6 +53,12 @@ public class NumberSequenceWriter implements AutoCloseable, LongConsumer {
                 file.channel(), bufferSize));
     }
 
+    public NumberSequenceWriter(SeqFile file, int bufferSize, boolean heap) {
+        this.file = file;
+        out = new DefaultBitOutput<>(byteOut = new FileChannelByteOutput(
+                file.channel(), bufferSize, heap));
+    }
+
     public long written() {
         return count;
     }
@@ -89,9 +95,7 @@ public class NumberSequenceWriter implements AutoCloseable, LongConsumer {
             assert offset == 1 || (offset % 2) == 0 : "Not a possible prime gap: " + offset + " for " + prime + " with last " + lastValue;
             maxOffset = Math.max(maxOffset, offset);
             offset = file.encodeOffset(offset);
-            boolean asserts = false;
-            assert asserts = true;
-            if (debug && asserts) {
+            if (NumberSequenceReader.asserts && debug) {
                 // debug
                 int recomputedOffset = offset;
                 switch (recomputedOffset) {
@@ -108,14 +112,15 @@ public class NumberSequenceWriter implements AutoCloseable, LongConsumer {
                 assert recomputedOffset == prime - lastValue : " recomputedOffset " + recomputedOffset + " should be " + (prime - lastValue)
                         + " (actual offset) for " + prime + " last val " + lastValue + " orig offset " + offset;
                 assert prime == reconstructed : "Bad calculation " + lastValue + " -> " + prime + " storedOffset " + offset + " recomputedOffset " + recomputedOffset + " actual offset " + (prime - lastValue);
-            }
-            if (debug) {
                 System.out.println("Write gap entry " + count + " for " + prime + " realGap " + (prime - lastValue) + " written as " + offset);
             }
             out.writeChar(header.bitsPerOffsetEntry(), (char) offset);
         }
         count++;
         lastValue = prime;
+        if (count % 5000000 == 0) { // for very large sieves that may be killed
+            file.updateCountAndSave(count, maxOffset);
+        }
     }
 
     volatile boolean closed;

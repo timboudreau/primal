@@ -118,17 +118,13 @@ public class NativeSieveMain {
                 }
             }));
 
-            LongConsumer consumer = new SieveMain.NoopWriter();
-            if (writer != null) {
-                consumer = consumer.andThen(writer);
-            }
+            LongConsumer consumer = writer == null ? new SieveMain.NoopWriter() : writer;
             if (log) {
                 consumer = consumer.andThen(new SieveMain.LogWriter());
             }
             if (stats) {
-                consumer = consumer.andThen(new SieveMain.StatsWriter());
+                consumer = consumer.andThen(new SieveMain.StatsWriter(max, total));
             }
-            Path pth = path;
             sieveNative(max, consumer, total);
         }
     }

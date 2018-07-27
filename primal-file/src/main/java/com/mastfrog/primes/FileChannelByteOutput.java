@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2017 Tim Boudreau.
@@ -27,23 +27,28 @@ import com.github.jinahya.bit.io.AbstractByteOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.channels.SeekableByteChannel;
 
 /**
  *
  * @author Tim Boudreau
  */
-public class FileChannelByteOutput extends AbstractByteOutput<FileChannel> implements AutoCloseable {
+public class FileChannelByteOutput extends AbstractByteOutput<SeekableByteChannel> implements AutoCloseable {
 
     private final ByteBuffer buf;
     private int written = 0;
 
-    public FileChannelByteOutput(FileChannel target) {
-        this(target, 512);
+    public FileChannelByteOutput(SeekableByteChannel target) {
+        this(target, 512, Boolean.getBoolean("primal.heapbuffers"));
     }
 
-    public FileChannelByteOutput(FileChannel target, int bufferSize) {
+    public FileChannelByteOutput(SeekableByteChannel target, int bufferSize) {
+        this(target, bufferSize, Boolean.getBoolean("primal.heapbuffers"));
+    }
+
+    public FileChannelByteOutput(SeekableByteChannel target, int bufferSize, boolean heap) {
         super(target);
-        buf = ByteBuffer.allocateDirect(bufferSize);
+        buf = heap ? ByteBuffer.allocate(bufferSize) : ByteBuffer.allocateDirect(bufferSize);
     }
 
     @Override
@@ -54,7 +59,7 @@ public class FileChannelByteOutput extends AbstractByteOutput<FileChannel> imple
             flush();
         }
     }
-    
+
     public long written() {
         return written;
     }
@@ -71,7 +76,9 @@ public class FileChannelByteOutput extends AbstractByteOutput<FileChannel> imple
         if (buf.position() > 0) {
             flush();
         }
-        target.force(true);
+        if (target instanceof FileChannel) {
+            ((FileChannel) target).force(true);
+        }
         target.close();
     }
 

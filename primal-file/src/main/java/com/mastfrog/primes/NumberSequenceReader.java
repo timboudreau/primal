@@ -38,15 +38,39 @@ import java.util.logging.Logger;
  *
  * @author Tim Boudreau
  */
-public final class NumberSequenceReader implements LongSupplier {
+@SuppressWarnings("AssertWithSideEffects")
+public final class NumberSequenceReader implements LongSupplier, AutoCloseable {
 
     private final SeqFile file;
     private long lastValue;
     private long count;
     private final BitInput in;
     long cumulativeBitsRead;
+    static final boolean asserts;
+
+    static {
+        asserts = isAsserts();
+    }
+
+    static boolean isAsserts() {
+        boolean result = false;
+        assert result = true;
+        return result;
+    }
 
     public NumberSequenceReader(SeqFile file) {
+        this(file, Boolean.getBoolean("primal.heapbuffers"));
+    }
+
+    public NumberSequenceReader(SeqFile file, int bufferSize) {
+        this(file, bufferSize, Boolean.getBoolean("primal.heapbuffers"));
+    }
+
+    public NumberSequenceReader(SeqFile file, boolean heap) {
+        this(file, 16384, heap);
+    }
+
+    public NumberSequenceReader(SeqFile file, int bufferSize, boolean heap) {
         this.file = file;
         cumulativeBitsRead = file.header().headerLength() * 8;
         try {
@@ -87,33 +111,28 @@ public final class NumberSequenceReader implements LongSupplier {
             return -1;
         }
         boolean isOffsetEntry = false;
+        final int offsetBits = file.header().bitsPerOffsetEntry();
+        final int fullBits = file.header().bitsPerFullEntry();
         try {
             isOffsetEntry = count % file.header().offsetEntriesPerFullEntry() == 0;
             if (isOffsetEntry) {
-                long readValue = in.readLong(true, file.header().bitsPerFullEntry());
-                cumulativeBitsRead += file.header().bitsPerFullEntry();
+                long readValue = in.readLong(true, fullBits);
+                cumulativeBitsRead += fullBits;
                 lastValue = file.decodeFull(readValue);
-//                if (readValue == 0) {
-//                    lastValue = 2;
-//                } else {
-//                    lastValue = (readValue * 2) + 1;
-//                }
-                if (debug) {
-                    System.out.println("READ FULL ENTRY AT " + count + " for  " + lastValue + " as " + readValue);
+                if (asserts && debug) {
+                    System.err.println("READ FULL ENTRY AT " + count + " for  " + lastValue + " as " + readValue);
                 }
             } else {
-                int readOffset = in.readInt(true, file.header().bitsPerOffsetEntry());
+                int readOffset = in.readInt(true, offsetBits);
                 int offset = file.decodeOffset(readOffset);
-                if (debug) {
-                    System.out.println("Read gap entry " + count + " for " + (lastValue + offset) + " realGap " + offset + " read as " + readOffset);
+                if (asserts && debug) {
+                    System.err.println("Read gap entry " + count + " for " + (lastValue + offset) + " realGap " + offset + " read as " + readOffset);
                 }
 
                 lastValue += offset;
-                cumulativeBitsRead += file.header().bitsPerOffsetEntry();
+                cumulativeBitsRead += offsetBits;
             }
             count++;
-//            assert lastValue % 2 != 0 || lastValue == 2 : " value in " + this.file + " is divisible by 2: " + lastValue;
-//            assert lastValue % 3 != 0 || lastValue == 3 : " value in " + this.file + " is divisible by 3: " + lastValue;;
             return lastValue;
         } catch (BufferUnderflowException ex) {
             throw new IOException("Ran out of data reading element " + count
@@ -141,5 +160,10 @@ public final class NumberSequenceReader implements LongSupplier {
         } catch (IOException ex) {
             return Exceptions.chuck(ex);
         }
+    }
+
+    @Override
+    public void close() throws Exception {
+        file.close();
     }
 }

@@ -42,6 +42,7 @@ import static com.mastfrog.sieve.file.SieveMain.formatHelpLine;
 import com.mastfrog.util.preconditions.ConfigurationError;
 import com.mastfrog.util.strings.Strings;
 import com.mastfrog.util.collections.CollectionUtils;
+import com.mastfrog.util.collections.IntSet;
 import com.mastfrog.util.search.Bias;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -63,6 +64,10 @@ public class ReadMain {
     static final String RANDOM = "random";
     static final String LIMIT = "limit";
     static final String END_OFFSET = "endoffset";
+    static final String GAPS = "gaps";
+    static final String DISTINCT_GAPS = "distinctgaps";
+    static final String DIFFERENTIAL_GAPS = "differentialgaps";
+    static final String DISTINCT_DIFFERENTIAL_GAPS = "distinctdifferentialgaps";
     private static final Map<Character, String> SHORT_COMMANDS = CollectionUtils.<Character, String>map('i').to(INFILE)
             .map('o').to(OUTFILE)
             .map('l').to(LIMIT)
@@ -73,6 +78,10 @@ public class ReadMain {
             .map('n').to(LESS_THAN)
             .map('h').to(HELP)
             .map('i').to(INFILE)
+            .map('p').to(GAPS)
+            .map('d').to(DISTINCT_GAPS)
+            .map('q').to(DIFFERENTIAL_GAPS)
+            .map('y').to(DISTINCT_DIFFERENTIAL_GAPS)
             .build();
 
     private static final Map<String, String> HELP_COMMANDS = CollectionUtils.<String, String>map(HELP).to("Print this help.")
@@ -85,6 +94,10 @@ public class ReadMain {
             .map(RANDOM).to("Randomly choose some of the values with a 1 in n probability")
             .map(END_OFFSET).to("Output values whose offset in the file is less than n")
             .map(LIMIT).to("Output no more than n values")
+            .map(GAPS).to("Output prime gaps rather than values")
+            .map(DISTINCT_GAPS).to("Output only distinct gap values")
+            .map(DIFFERENTIAL_GAPS).to("Output difference between subsequent gaps")
+            .map(DISTINCT_DIFFERENTIAL_GAPS).to("Output distict values of differences between subequent primes")
             .buildLinkedHashMap();
 
     private static void printHelpAndExit() {
@@ -204,7 +217,19 @@ public class ReadMain {
             if (infile == null) {
                 exit(4, "--infile not specified - no input file.");
             }
-
+            boolean outputGaps = s.getBoolean(GAPS, false);
+            boolean outputDistinctGaps = s.getBoolean(DISTINCT_GAPS, false);
+            boolean outputDifferentialGaps = s.getBoolean(DIFFERENTIAL_GAPS, false);
+            boolean outputDistinctDifferentialGaps = s.getBoolean(DISTINCT_DIFFERENTIAL_GAPS, false);
+            int ct = 0;
+            for (boolean b : new boolean[]{outputGaps, outputDistinctGaps, outputDifferentialGaps, outputDistinctDifferentialGaps}) {
+                if (b) {
+                    ct++;
+                }
+            }
+            if (ct > 1) {
+                exit(5, "Use --gaps or --distinctgaps or --differentialgaps - cannot do more than one at the same time.\n");
+            }
             LimitPredicate limit = new LimitPredicate(s.getLong(LIMIT, Long.MAX_VALUE));
             LessThan indexLessThan;
             LessThan valueLessThan;
@@ -232,12 +257,25 @@ public class ReadMain {
                 if (outPath != null) {
                     sfile = new SeqFile(outPath, Mode.OVERWRITE, file.sizeOptimizedHeaderForNewFile());
                     if (s.getBoolean(LOG, false)) {
-                        cons = new ConsoleLongConsumer().andThen(writer = new NumberSequenceWriter(sfile));
+                        LongConsumer console = outputGaps
+                                ? new ConsoleGapsConsumer()
+                                : outputDistinctGaps
+                                        ? new ConsoleDistinctGapsConsumer()
+                                        : outputDifferentialGaps ? new ConsoleDifferentialGapsConsumer()
+                                                : outputDistinctDifferentialGaps ? new ConsoleDistinctDifferentialGapsConsumer()
+                                                        : new ConsoleLongConsumer();
+                        cons = console.andThen(writer = new NumberSequenceWriter(sfile));
                     } else {
                         cons = writer = new NumberSequenceWriter(sfile);
                     }
                 } else {
-                    cons = new ConsoleLongConsumer();
+                    cons = outputGaps ? new ConsoleGapsConsumer()
+                            : outputDistinctGaps
+                                    ? new ConsoleDistinctGapsConsumer()
+                                    : outputDifferentialGaps
+                                            ? new ConsoleDifferentialGapsConsumer()
+                                            : outputDistinctDifferentialGaps ? new ConsoleDistinctDifferentialGapsConsumer()
+                                                    : new ConsoleLongConsumer();
                 }
                 try {
                     while (file.hasNext()) {
@@ -275,8 +313,6 @@ public class ReadMain {
 
     private static class ConsoleLongConsumer implements LongConsumer {
 
-        public ConsoleLongConsumer() {
-        }
         boolean first = true;
         long chars = 0;
 
@@ -296,6 +332,162 @@ public class ReadMain {
                 chars += s.length() + 1;
             }
             System.out.print(s);
+        }
+    }
+
+    private static class ConsoleGapsConsumer implements LongConsumer {
+
+        boolean first = true;
+        long chars = 0;
+        long last = 0;
+
+        @Override
+        public void accept(long value) {
+            if (last == 0) {
+                last = value;
+                return;
+            }
+            if (!first) {
+                System.out.print(',');
+            } else {
+                first = false;
+            }
+            String s = Long.toString(value - last);
+            if (chars + s.length() > 70) {
+                System.out.print('\n');
+                System.out.flush();
+                chars = s.length() + 1;
+            } else {
+                chars += s.length() + 1;
+            }
+            System.out.print(s);
+            last = value;
+        }
+    }
+
+    private static class ConsoleDifferentialGapsConsumer implements LongConsumer {
+
+        boolean first = true;
+        long chars = 0;
+        long last = 0;
+        int lastGap = 0;
+
+        {
+            System.err.println("created a diff gaps consumer");
+        }
+
+        @Override
+        public void accept(long value) {
+            if (last == 0) {
+                last = value;
+                return;
+            }
+            int gap = (int) (value - last);
+            if (lastGap == 0) {
+                lastGap = gap;
+                last = value;
+                return;
+            }
+            if (!first) {
+                System.out.print(',');
+            } else {
+                first = false;
+            }
+            int diff = lastGap - gap;
+            String s = Integer.toString(diff);
+            if (chars + s.length() > 70) {
+                System.out.print('\n');
+                System.out.flush();
+                chars = s.length() + 1;
+            } else {
+                chars += s.length() + 1;
+            }
+            System.out.print(s);
+            last = value;
+            lastGap = gap;
+        }
+    }
+
+    private static class ConsoleDistinctDifferentialGapsConsumer implements LongConsumer {
+
+        boolean first = true;
+        long chars = 0;
+        long last = 0;
+        int lastGap = 0;
+        final Set<Integer> gaps = new HashSet<>(4096);
+
+        @Override
+        public void accept(long value) {
+            if (last == 0) {
+                last = value;
+                return;
+            }
+            int gap = (int) (value - last);
+            if (lastGap == 0) {
+                lastGap = gap;
+                last = value;
+                return;
+            }
+            int diff = gap - lastGap;
+            
+            if (gaps.contains(diff)) {
+                lastGap = gap;
+                last = value;
+                return;
+            }
+            gaps.add(diff);
+            if (!first) {
+                System.out.print(',');
+            } else {
+                first = false;
+            }
+            String s = Integer.toString(diff);
+            if (chars + s.length() > 70) {
+                System.out.print('\n');
+                System.out.flush();
+                chars = s.length() + 1;
+            } else {
+                chars += s.length() + 1;
+            }
+            System.out.print(s);
+            last = value;
+            lastGap = gap;
+        }
+    }
+
+    private static class ConsoleDistinctGapsConsumer implements LongConsumer {
+
+        boolean first = true;
+        long chars = 0;
+        long last = 0;
+        final IntSet gaps = new IntSet();
+
+        @Override
+        public void accept(long value) {
+            if (last == 0) {
+                last = value;
+                return;
+            }
+            int gap = (int) (value - last);
+            if (gaps.contains(gap)) {
+                last = value;
+                return;
+            }
+            gaps.add(gap);
+            if (!first) {
+                System.out.print(',');
+            }
+            first = false;
+            String s = Integer.toString(gap);
+            if (chars + s.length() > 70) {
+                System.out.print('\n');
+                System.out.flush();
+                chars = s.length() + 1;
+            } else {
+                chars += s.length() + 1;
+            }
+            System.out.print(s);
+            last = value;
         }
     }
 }

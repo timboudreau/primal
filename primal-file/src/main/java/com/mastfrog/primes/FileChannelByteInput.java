@@ -26,19 +26,25 @@ package com.mastfrog.primes;
 import com.github.jinahya.bit.io.AbstractByteInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import java.nio.channels.SeekableByteChannel;
 
 /**
  *
  * @author Tim Boudreau
  */
-public class FileChannelByteInput extends AbstractByteInput<FileChannel> {
+public class FileChannelByteInput extends AbstractByteInput<SeekableByteChannel> {
+
     private ByteBuffer buf;
-    public FileChannelByteInput(FileChannel source) {
+
+    public FileChannelByteInput(SeekableByteChannel source) {
         this(source, 16384);
     }
 
-    public FileChannelByteInput(FileChannel source, int bufferSize) {
+    public FileChannelByteInput(SeekableByteChannel source, int bufferSize) {
+        this(source, bufferSize, Boolean.getBoolean("primal.heapbuffers"));
+    }
+
+    public FileChannelByteInput(SeekableByteChannel source, int bufferSize, boolean heap) {
         super(source);
         this.buf = ByteBuffer.allocateDirect(bufferSize);
     }

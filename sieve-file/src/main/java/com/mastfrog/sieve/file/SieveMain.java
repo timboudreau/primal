@@ -60,6 +60,7 @@ import java.util.function.LongSupplier;
 public class SieveMain {
 
     static final NumberFormat NUMBERS = new DecimalFormat("###,###,###,###,###,###,###,##0");
+    static final NumberFormat DECIMALS = new DecimalFormat("###,###,###,###,###,###,###,##0.0##");
 
     static final String OVERWRITE = "overwrite";
     static final String OUTFILE = "outfile";
@@ -228,7 +229,7 @@ public class SieveMain {
             consumer = consumer.andThen(new LogWriter());
         }
         if (stats) {
-            consumer = consumer.andThen(new StatsWriter());
+            consumer = consumer.andThen(new StatsWriter(max, total));
         }
 
         try {
@@ -397,16 +398,23 @@ public class SieveMain {
 
     static final class StatsWriter implements LongConsumer {
 
-        static final Duration interval = Duration.ofSeconds(10);
+        static final Duration interval = Duration.ofSeconds(30);
         final ZonedDateTime startTime = ZonedDateTime.now();
         ZonedDateTime nextLog = startTime.plus(interval);
         ZonedDateTime lastLog = startTime;
         long countAtLastLog = 0;
         int maxBits = 0;
         int maxGap = 0;
-        final IntSet gaps = new IntSet();
+        final IntSet gaps = new IntSet(65535);
         long count = 0;
         long prev = 0;
+        final long max;
+        final long total;
+
+        public StatsWriter(long max, long total) {
+            this.max = max;
+            this.total = total;
+        }
 
         private void logDetails() {
             System.err.println("Bits required for values: " + maxBits);
@@ -432,8 +440,25 @@ public class SieveMain {
                     gaps.add(gap);
                 }
                 if (count > 0 && ZonedDateTime.now().isAfter(nextLog)) {
-                    System.err.println("Sieved " + NUMBERS.format(count - countAtLastLog) + " primes in last " + TimeUtil.format(Duration.between(lastLog, ZonedDateTime.now()), false)
-                            + " total " + NUMBERS.format(count) + ";  most recent: " + value + "\nElapsed time: " + TimeUtil.format(Duration.between(startTime, ZonedDateTime.now()), false));
+                    Duration sinceLast = Duration.between(lastLog, ZonedDateTime.now());
+                    Duration sinceStart = Duration.between(startTime, ZonedDateTime.now());
+                    float cumulativeMinutes = sinceStart.toMinutes();
+                    String throughput = DECIMALS.format(cumulativeMinutes == 0 ? 0 : (float) count / cumulativeMinutes);
+
+                    float percent;
+                    if (total != -1) {
+                        float ct = count;
+                        float tl = total;
+                        percent = (ct / tl) * 100;
+                    } else {
+                        float v = value;
+                        float m = max;
+                        percent = (v / m) * 100;
+                    }
+
+                    System.err.println("Sieved " + NUMBERS.format(count - countAtLastLog) + " primes in last " + TimeUtil.format(sinceLast, false)
+                            + " total " + NUMBERS.format(count) + ";  most recent: " + value + "\nElapsed time: " + TimeUtil.format(sinceStart, false)
+                            + "\nThroughput: " + throughput + " primes / minute\nPercent done: " + DECIMALS.format(percent) + "%");
                     lastLog = nextLog;
                     nextLog = ZonedDateTime.now().plus(interval);
                     countAtLastLog = count;

@@ -24,6 +24,7 @@
 package com.mastfrog.primes;
 
 import com.github.jinahya.bit.io.DefaultBitInput;
+import static com.mastfrog.primes.SeqFile.Mode.APPEND_SYNC;
 import com.mastfrog.primes.SeqFileHeader.EntryPosition;
 import static com.mastfrog.primes.SeqFileHeader.bitsRequired;
 import com.mastfrog.util.collections.IntSet;
@@ -35,6 +36,7 @@ import com.mastfrog.util.search.BinarySearch;
 import com.mastfrog.util.strings.Strings;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -65,7 +67,7 @@ import java.util.Set;
  */
 public class SeqFile implements AutoCloseable, Iterable<Long> {
 
-    private final FileChannel channel;
+    private final SeekableByteChannel channel;
     private final SeqFileHeader header;
     private final Mode mode;
 
@@ -92,6 +94,9 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
         this.mode = mode;
         switch (mode) {
             case READ:
+                // For repairing a file with no entry count in the header, we need
+                // a way to pass in something
+                break;
             case APPEND:
                 if (header.isPresent()) {
                     throw new IOException("Should not pass a header when mode is " + mode);
@@ -103,20 +108,28 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
                 }
         }
         mode.check(path);
-        if (mode == Mode.APPEND && exists) {
-            try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+        if ((mode == Mode.APPEND || mode == APPEND_SYNC) && exists) {
+//            try (SeekableByteChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+            try (SeekableByteChannel channel = Files.newByteChannel(path, StandardOpenOption.READ)) {
                 this.header = new SeqFileHeader(channel);
             }
-            channel = FileChannel.open(path, mode.options());
+            channel = Files.newByteChannel(path, mode.options());
         } else if (mode.isRead()) {
-            channel = FileChannel.open(path, mode.options());
-            this.header = new SeqFileHeader(channel);
+            channel = Files.newByteChannel(path, mode.options());
+            if (!header.isPresent()) {
+                this.header = new SeqFileHeader(channel);
+            } else {
+                this.header = header.get();
+            }
         } else {
             channel = FileChannel.open(path, mode.options());
-            if (mode != Mode.APPEND) {
+            if (mode != Mode.APPEND && mode != APPEND_SYNC) {
+                System.err.println("Write header to file.");
                 this.header = header.get();
                 this.header.write(channel);
-                channel.force(true);
+                if (mode.isSync() && channel instanceof FileChannel) {
+                    ((FileChannel)channel).force(true);
+                }
             } else {
                 throw new IllegalStateException();
             }
@@ -327,22 +340,19 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
     int decodeOffset(int offset) {
         switch (offset) {
             case 0:
-                offset = 1;
-                break;
+                return 1;
             case 1:
-                offset = 2;
-                break;
+                return 2;
             default:
-                offset *= 2;
+                return offset * 2;
         }
-        return offset;
     }
 
     long decodeFull(long result) {
         if (result == 0) {
-            result = 2;
+            result = 2L;
         } else {
-            result = (result * 2) + 1;
+            result = (result * 2L) + 1L;
         }
         return result;
     }
@@ -486,7 +496,7 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
         return header;
     }
 
-    public FileChannel channel() {
+    public SeekableByteChannel channel() {
         return channel;
     }
 
@@ -503,8 +513,8 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
     }
 
     void flush() throws IOException {
-        if (this.mode.isWrite() && this.mode.isSync()) {
-            channel.force(true);
+        if (this.mode.isWrite() && this.mode.isSync() && channel instanceof FileChannel) {
+            ((FileChannel)channel).force(true);
         }
     }
 

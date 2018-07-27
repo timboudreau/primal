@@ -27,6 +27,7 @@ import com.mastfrog.primes.SeqFile.Mode;
 import com.mastfrog.util.collections.Longerator;
 import com.mastfrog.util.search.Bias;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -127,8 +128,8 @@ public class SequentialReadWriteTest {
                         total++;
                     }
                 }
-                if (writeFile.channel().isOpen()) {
-                    writeFile.channel().force(true);
+                if (writeFile.channel().isOpen() && writeFile.channel() instanceof FileChannel) {
+                    ((FileChannel)writeFile.channel()).force(true);
                 }
             }
         }

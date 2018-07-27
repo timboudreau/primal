@@ -52,6 +52,7 @@ public class Main {
             //            .map("filter").to("Optimize a sieve file to use no more bits than necessary, optionally changing the ratio of offset-entries to full entries")
             .map("read").to("Read and filter values from a sieve file to the standard output or to a new file")
             .map("info").to("Print sequence file metadata")
+            .map("repair").to("Repair the output from a killed sieve process so it is usable, or with --optimize, optimize file size")
             .build();
 
     public static void main(String[] args) throws Exception {
@@ -73,6 +74,9 @@ public class Main {
                 break;
             case "info":
                 InfoMain.main(remainingArgs);
+                break;
+            case "repair":
+                RepairMain.main(remainingArgs);
                 break;
             default:
                 System.err.println("Unknown command '" + cmd + "'");
