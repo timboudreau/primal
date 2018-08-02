@@ -27,7 +27,6 @@ import com.mastfrog.util.preconditions.Checks;
 import java.io.IOException;
 import static java.lang.Math.floor;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.channels.SeekableByteChannel;
 import java.util.Arrays;
 
@@ -61,6 +60,7 @@ public class SeqFileHeader {
         this.count = count;
         this.maxOffset = maxOffset;
     }
+
     public SeqFileHeader(int bitsPerOffsetEntry, int bitsPerFullEntry, int offsetEntriesPerFullEntry) {
         this(SUPPORTED_VERSION, bitsPerOffsetEntry, bitsPerFullEntry, offsetEntriesPerFullEntry);
     }
@@ -236,7 +236,7 @@ public class SeqFileHeader {
         this.maxOffset = maxOffset;
         return this;
     }
-    
+
     public int maxOffset() {
         return maxOffset;
     }
@@ -290,7 +290,9 @@ public class SeqFileHeader {
     }
 
     public void write(SeekableByteChannel ch) throws IOException {
-        ByteBuffer b = ByteBuffer.allocateDirect(HEADER_LENGTH);
+        ByteBuffer b = Boolean.getBoolean("primal.heapbuffers")
+                ? ByteBuffer.allocate(HEADER_LENGTH)
+                : ByteBuffer.allocateDirect(HEADER_LENGTH);
         b.put(MAGIC);
         b.put((byte) version);
         b.put((byte) bitsPerOffsetEntry);
@@ -300,9 +302,9 @@ public class SeqFileHeader {
         b.putInt(maxOffset);
         b.flip();
         ch.write(b);
-        if (ch instanceof FileChannel) {
-            ((FileChannel)ch).force(true);
-        }
+//        if (ch instanceof FileChannel) {
+//            ((FileChannel) ch).force(true);
+//        }
     }
 
     @Override

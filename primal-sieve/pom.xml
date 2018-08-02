@@ -3,9 +3,9 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.mastfrog</groupId>
-        <artifactId>mastfrog-parent</artifactId>
-        <version>2.5.0-dev</version>
-        <relativePath/>
+        <artifactId>primal-parent</artifactId>
+        <version>1.0</version>
+        <relativePath>..</relativePath>
     </parent>
     <artifactId>primal-sieve</artifactId>
     <packaging>jar</packaging>
