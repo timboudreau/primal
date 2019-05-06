@@ -23,9 +23,9 @@
  */
 package com.mastfrog.primal.sieve;
 
+import com.mastfrog.bits.MutableBits;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
-import org.apache.lucene.util.OpenBitSet;
 
 /**
  * A prime sieve, implemented over a bit set using Lucene's (long-indexed)
@@ -38,8 +38,9 @@ import org.apache.lucene.util.OpenBitSet;
  */
 class SieveImpl {
 
-    private final OpenBitSet set;
+    private final MutableBits set;
     private final long maxValue;
+    static final boolean offHeap = false;//Boolean.getBoolean("sieve.off.heap");
 
     private final LongConsumer consumer;
     private final LongSupplier preceding;
@@ -58,7 +59,8 @@ class SieveImpl {
     SieveImpl(long maxValue, LongConsumer consumer, long total) {
         this.total = total;
         this.maxValue = maxValue + 1;
-        set = new OpenBitSet(maxValue);
+        set = MutableBits.createLarge(maxValue, offHeap);
+        set.clear();
         set.flip(2, maxValue);
 //        int bitsForX = bitsRequired(maxValue);
 //        writer = new NumberSequenceWriter(new SeqFile(path, Mode.OVERWRITE,
@@ -98,7 +100,7 @@ class SieveImpl {
         this.maxValue = maxValue + 1;
         this.startValue = startValue;
         long bitCount = (maxValue - startValue) + 1;
-        set = new OpenBitSet(bitCount);
+        set = MutableBits.createLarge(bitCount, offHeap);
         set.flip(1, bitCount);
     }
 
@@ -219,12 +221,12 @@ class SieveImpl {
     }
 
     private void clear(long i) {
-        set.fastClear(i - startValue);
+        set.clear(i - startValue);
     }
 
     private long nextSetBit(long i) {
         long bitPosition = i - startValue;
-        long result = set.nextSetBit(bitPosition) + startValue;
+        long result = set.nextSetBitLong(bitPosition) + startValue;
         return result;
     }
 
@@ -234,10 +236,10 @@ class SieveImpl {
         long doubleI = i * 2;
         long max = maxValue - i;
         for (long j = doubleI; j < max; j += doubleI) {
-            set.fastClear(j);
-            set.fastClear(j + i);
+            set.clear(j);
+            set.clear(j + i);
         }
-        i = set.nextSetBit(i + 1);
+        i = set.nextSetBitLong(i + 1);
         return i;
     }
 

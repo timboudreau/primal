@@ -15,10 +15,14 @@
             <groupId>com.mastfrog</groupId>
         </dependency>        
         <dependency>
+            <artifactId>bits</artifactId>
+            <groupId>com.mastfrog</groupId>
+        </dependency>        
+<!--        <dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-core</artifactId>
             <version>4.5.0</version>
             <type>jar</type>
-        </dependency>
+        </dependency>-->
     </dependencies>
 </project>

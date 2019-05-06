@@ -405,7 +405,7 @@ public class SieveMain {
         long countAtLastLog = 0;
         int maxBits = 0;
         int maxGap = 0;
-        final IntSet gaps = new IntSet(65535);
+        final IntSet gaps = IntSet.create(65535);
         long count = 0;
         long prev = 0;
         final long max;

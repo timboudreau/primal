@@ -591,7 +591,8 @@ public class SeqFile implements AutoCloseable, Iterable<Long> {
             orig.header.updateCount(orig.estimatedCount());
         }
         Longerator longs = orig.longerator();
-        IntSet gaps = new IntSet();
+        IntSet gaps = IntSet.create();
+        
         while (longs.hasNext()) {
             long val = longs.next();
             if (val < minValue) {

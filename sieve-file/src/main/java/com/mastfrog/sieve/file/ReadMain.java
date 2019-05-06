@@ -460,7 +460,7 @@ public class ReadMain {
         boolean first = true;
         long chars = 0;
         long last = 0;
-        final IntSet gaps = new IntSet();
+        final IntSet gaps = IntSet.create();
 
         @Override
         public void accept(long value) {
