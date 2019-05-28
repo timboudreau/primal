@@ -17,6 +17,12 @@
         <dependency>
             <artifactId>bits</artifactId>
             <groupId>com.mastfrog</groupId>
-        </dependency>        
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+            <type>jar</type>
+        </dependency>
     </dependencies>
 </project>
